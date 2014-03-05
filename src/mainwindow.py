@@ -5,7 +5,8 @@ from PyQt4 import uic
 
 TypeRole = Qt.UserRole + 1
 OpaqueRefRole = Qt.UserRole + 2
-SortRole = Qt.UserRole + 3
+PoolOpaqueRefRole = Qt.UserRole + 3
+SortRole = Qt.UserRole + 4
 
 
 class ItemDelegate(QItemDelegate):
@@ -66,6 +67,7 @@ class MainWindow(QMainWindow):
         self.treeView.setContextMenuPolicy(Qt.CustomContextMenu)
 
         QObject.connect(self.treeView, SIGNAL("customContextMenuRequested(QPoint)"), self.onTreeViewCustomContextMenuRequest)
+        QObject.connect(self.treeView, SIGNAL("clicked(QModelIndex)"), self.onTreeViewItemClick)
 
         QObject.connect(self.treeFilter, SIGNAL("textChanged(QString)"), self.onTreeFilterChanged)
 
@@ -147,6 +149,7 @@ class MainWindow(QMainWindow):
 
         vm = QStandardItem()
         self._setVmObject(vm, vm_ref, vm_data)
+        vm.setData(pool_ref, role=PoolOpaqueRefRole)
 
         host = self._getVmHost(vm_data)
         if host:
@@ -186,12 +189,14 @@ class MainWindow(QMainWindow):
                     # FIXME doesn't de-expand, don't know why yet
                     self.treeView.setExpanded(pool_model.child(j, 0).index(), False)
 
+    def onTreeViewItemClick(self, index):
+        m = self.treeViewModel.itemFromIndex(self.treeViewProxyModel.mapToSource(index))
+
     def onTreeViewCustomContextMenuRequest(self, pos):
-        print self.treeView.selectedIndexes()[0].model()
-        current_selection = self.treeView.selectedIndexes()[0].model().item(self.treeView.selectedIndexes()[0].row())
+        index = self.treeView.selectedIndexes()[0]
+        m = self.treeViewModel.itemFromIndex(self.treeViewProxyModel.mapToSource(index))
 
         menu = QMenu()
-        print current_selection
         menu.addAction(self.actionStart)
         menu.addAction(self.actionSuspend)
         menu.addAction(self.actionShutdown)
