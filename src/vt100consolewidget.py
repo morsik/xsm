@@ -12,6 +12,9 @@ class Vt100ConsoleWidget(QWidget):
         super(Vt100ConsoleWidget, self).__init__(parent)
         self.setAutoFillBackground(True)
         self.setFocusPolicy(Qt.ClickFocus)
+        self.setAttribute(Qt.WA_KeyCompression, True)
+
+        self.installEventFilter(self)
 
         self.fontFamily = "Monaco"
         self.fontVerticalSize = 12
@@ -21,7 +24,7 @@ class Vt100ConsoleWidget(QWidget):
         self.frameSize = 2
 
         self.columns = 80
-        self.rows = 25
+        self.rows = 24
 
         self.te_screen = pyte.Screen(self.columns, self.rows)
         self.te_stream = pyte.ByteStream()
@@ -30,16 +33,68 @@ class Vt100ConsoleWidget(QWidget):
 
         self._doubleBuffer = None
 
+        self.tmr = QTimer()
+        self.tmr.setSingleShot(True)
+
+        self.connect(self.tmr, SIGNAL("timeout()"), self.onRepaintTimeout)
+
+    def onRepaintTimeout(self):
+        self.repaint()
+
     def setData(self, data):
         if not data:
             self.te_stream.reset()
             self.te_stream.feed(b"\033[2J\033[1;1H")
         else:
             self.te_stream.feed(b"%s" % data)
-        self.repaint()
+
+        self.tmr.stop()
+        self.tmr.start(25)
+
+    def eventFilter(self, o, ev):
+        if ev.type() == QEvent.KeyPress:
+            k = QKeyEvent(ev)
+            if k.key() == Qt.Key_Tab:
+                # don't fuck with me you... tab key!
+                self.emit(SIGNAL("keyPressed"), '\t')
+                return True
+        return False
 
     def keyPressEvent(self, ev):
-        self.emit(SIGNAL("keyPressed"), ev.text())
+        bindKeys = {
+            Qt.Key_Up: '\033OA',
+            Qt.Key_Down: '\033OB',
+            Qt.Key_Left: '\033OD',
+            Qt.Key_Right: '\033OC',
+
+            Qt.Key_Escape: '\033\033',
+            Qt.Key_F1: '\0331',
+            Qt.Key_F2: '\0332',
+            Qt.Key_F3: '\0333',
+            Qt.Key_F4: '\0334',
+            Qt.Key_F5: '\0335',
+            Qt.Key_F6: '\0336',
+            Qt.Key_F7: '\0337',
+            Qt.Key_F8: '\0338',
+            Qt.Key_F9: '\0339',
+            Qt.Key_F10: '\0330',
+            Qt.Key_F11: '\033!',
+            Qt.Key_F12: '\033@',
+            Qt.Key_Backspace: '\b',
+
+            #Qt.Key_Return: '\n',
+            Qt.Key_Home: '\033[1~',
+            Qt.Key_Insert: '\033[2~',
+            Qt.Key_Delete: '\033[3~',
+            Qt.Key_End: '\033[4~',
+            Qt.Key_PageUp: '\033[5~',
+            Qt.Key_PageDown: '\033[6~',
+        }
+
+        try:
+            self.emit(SIGNAL("keyPressed"), bindKeys[ev.key()])
+        except KeyError:
+            self.emit(SIGNAL("keyPressed"), str(ev.text()))
 
     def paintEvent(self, ev):
         font = QFont()
