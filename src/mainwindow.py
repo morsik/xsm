@@ -72,6 +72,10 @@ class MainWindow(QMainWindow):
 
         self.treeView.setContextMenuPolicy(Qt.CustomContextMenu)
 
+        self.treeViewFilterTimer = QTimer()
+        self.treeViewFilterTimer.setSingleShot(True)
+        QObject.connect(self.treeViewFilterTimer, SIGNAL("timeout()"), self.onFilterTimeout)
+
         QObject.connect(self.treeView, SIGNAL("customContextMenuRequested(QPoint)"), self.onTreeViewCustomContextMenuRequest)
         QObject.connect(self.treeView, SIGNAL("clicked(QModelIndex)"), self.onTreeViewItemClick)
 
@@ -83,6 +87,21 @@ class MainWindow(QMainWindow):
         self._currentConnection = ConsoleConnection()
 
         self.tabWidget.addTab(self.consoleWidget, "Console")
+
+    def onFilterTimeout(self):
+        text = self.treeFilter.text()
+        self.treeViewProxyModel.setFilterRegExp(QRegExp(text,
+            Qt.CaseInsensitive, QRegExp.FixedString));
+        self.treeViewProxyModel.setFilterKeyColumn(0);
+        if text:
+            self.treeView.expandAll()
+        else:
+            for i in range(self.treeViewModel.rowCount()):
+                pool_model = self.treeViewModel.item(i, 0)
+                self.treeView.setExpanded(self.treeViewModel.item(i, 0).index(), True)
+                for j in range(pool_model.rowCount()):
+                    # FIXME doesn't de-expand, don't know why yet
+                    self.treeView.setExpanded(pool_model.child(j, 0).index(), False)
 
     def onConsoleConnectionDataReceived(self, data):
         self.consoleWidget.setData(data)
@@ -192,18 +211,8 @@ class MainWindow(QMainWindow):
                 self.xcm.getConnectionByPoolRef(pool_ref).data['pbd'][sr_data['PBDs'][0]]['host']).appendRow(sr)
 
     def onTreeFilterChanged(self, text):
-        self.treeViewProxyModel.setFilterRegExp(QRegExp(text,
-            Qt.CaseInsensitive, QRegExp.FixedString));
-        self.treeViewProxyModel.setFilterKeyColumn(0);
-        if text:
-            self.treeView.expandAll()
-        else:
-            for i in range(self.treeViewModel.rowCount()):
-                pool_model = self.treeViewModel.item(i, 0)
-                self.treeView.setExpanded(self.treeViewModel.item(i, 0).index(), True)
-                for j in range(pool_model.rowCount()):
-                    # FIXME doesn't de-expand, don't know why yet
-                    self.treeView.setExpanded(pool_model.child(j, 0).index(), False)
+        self.treeViewFilterTimer.stop()
+        self.treeViewFilterTimer.start(150)
 
     def onTreeViewItemClick(self, index):
         m = self.treeViewModel.itemFromIndex(self.treeViewProxyModel.mapToSource(index))
