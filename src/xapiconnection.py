@@ -23,10 +23,13 @@ class XapiConnection(QtCore.QThread):
         self.password = password
 
         self.data = {
-            'VM': (),
-            'task': (),
-            'pool': (),
-            'network': (),
+            'pool': {},
+            'host': {},
+            'vm': {},
+            'task': {},
+            'pbd': {},
+            'sr': {},
+            'console': {}
         }
 
     def connectXenApi(self):
@@ -58,6 +61,7 @@ class XapiConnection(QtCore.QThread):
         self.data['task'] = self.session.xenapi.task.get_all_records()
         self.data['pbd'] = self.session.xenapi.PBD.get_all_records()
         self.data['sr'] = self.session.xenapi.SR.get_all_records()
+        self.data['console'] = self.session.xenapi.console.get_all_records()
 
         # this is strange... but i couldn't find any other way to get pool ref
         pool_i = 1

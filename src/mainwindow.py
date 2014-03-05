@@ -2,6 +2,12 @@ from PyQt4.QtCore import *
 from PyQt4.QtGui import *
 from PyQt4 import uic
 
+from vt100consolewidget import Vt100ConsoleWidget
+from consoleconnection import ConsoleConnection
+import settings
+
+import re
+
 
 TypeRole = Qt.UserRole + 1
 OpaqueRefRole = Qt.UserRole + 2
@@ -70,6 +76,16 @@ class MainWindow(QMainWindow):
         QObject.connect(self.treeView, SIGNAL("clicked(QModelIndex)"), self.onTreeViewItemClick)
 
         QObject.connect(self.treeFilter, SIGNAL("textChanged(QString)"), self.onTreeFilterChanged)
+
+        self.consoleWidget = Vt100ConsoleWidget()
+        self.consoleConnections = []
+
+        self._currentConnection = ConsoleConnection()
+
+        self.tabWidget.addTab(self.consoleWidget, "Console")
+
+    def onConsoleConnectionDataReceived(self, data):
+        self.consoleWidget.setData(data)
 
     def _getPoolModel(self, pool_ref):
         pool_row = None
@@ -192,6 +208,68 @@ class MainWindow(QMainWindow):
     def onTreeViewItemClick(self, index):
         m = self.treeViewModel.itemFromIndex(self.treeViewProxyModel.mapToSource(index))
 
+        if m.data(role=TypeRole).toString() != 'vm' and m.data(role=TypeRole).toString() != 'host':
+            self.consoleWidget.setData(None)
+            return
+
+        loc = None
+        conn = self.xcm.getConnectionByPoolRef(m.data(role=PoolOpaqueRefRole))
+        for console_ref, console_data in conn.data['console'].items():
+            # FIXME: support more protocols
+            if console_data['protocol'] != 'vt100':
+                continue
+
+            if console_data['VM'] == m.data(role=OpaqueRefRole):
+                loc = console_data['location']
+
+        self.consoleWidget.setData(None)
+
+        # disconnect signal from old connection
+        # do it anyway!
+        self.disconnect(self._currentConnection, SIGNAL("dataReceived"), self.onConsoleConnectionDataReceived)
+        self.disconnect(self.consoleWidget, SIGNAL("keyPressed"), self._currentConnection.send)
+
+        if not loc:
+            self.consoleWidget.setData(
+                '\033[2J\033[1;1H\r\n'
+                ' \033[1;31mCan\'t connect to \033[1;36m{0}\033[1;31m!\033[0m\r\n'
+                ' It was impossible to find console location.'.format(m.text()))
+            return
+
+        re_loc = re.compile('(https?)://([^/]+)/console\?uuid=(.*)')
+        match = re_loc.match(loc)
+        if match:
+            _found = False
+            for c in self.consoleConnections:
+                if (c['pool'] == m.data(role=PoolOpaqueRefRole).toString() and
+                        c['type'] == m.data(role=TypeRole).toString() and
+                        c['vm'] == m.text()):
+                    _found = True
+                    self._currentConnection = c['conn']
+
+            if not _found:
+                cc = ConsoleConnection()
+                self._currentConnection = cc
+
+                cc.setConnection(match.group(2), 80,
+                                 settings.connect_details[0][1],
+                                 settings.connect_details[0][2],
+                                 match.group(3))
+                cc.start()
+
+                self.consoleConnections.append({
+                    'pool': m.data(role=PoolOpaqueRefRole).toString(),
+                    'type': m.data(role=TypeRole).toString(),
+                    'vm': m.text(),
+                    'conn': cc,
+                })
+
+            self.consoleWidget.setData(self._currentConnection.data)
+
+            # ...and connect new signal
+            self.connect(self._currentConnection, SIGNAL("dataReceived"), self.onConsoleConnectionDataReceived)
+            self.connect(self.consoleWidget, SIGNAL("keyPressed"), self._currentConnection.send)
+
     def onTreeViewCustomContextMenuRequest(self, pos):
         index = self.treeView.selectedIndexes()[0]
         m = self.treeViewModel.itemFromIndex(self.treeViewProxyModel.mapToSource(index))
@@ -220,6 +298,7 @@ class MainWindow(QMainWindow):
             host.setData('host', role=TypeRole)
             host.setData(host_ref, role=OpaqueRefRole)
             host.setData('0:host/{0}'.format(host_data['name_label']), role=SortRole)
+            host.setData(pool_ref, role=PoolOpaqueRefRole)
 
             pool.appendRow(host)
             self.treeView.setExpanded(host.index(), False)
