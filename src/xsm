@@ -1,0 +1,46 @@
+#!/usr/bin/env python2
+
+import sys
+
+from PyQt4.QtCore import *
+from PyQt4.QtGui import *
+
+from xapiconnectionmanager import XapiConnectionManager
+from mainwindow import MainWindow
+
+import settings
+
+
+def set_procname(newname):
+    from ctypes import cdll, byref, create_string_buffer
+    libc = cdll.LoadLibrary('libc.so.6')
+    buff = create_string_buffer(len(newname) + 1)
+    buff.value = newname
+    # Refer to "#define" of "/usr/include/linux/prctl.h" for the misterious
+    # value 16 & arg[3..5] are zero as the man page says.
+    libc.prctl(15, byref(buff), 0, 0, 0)
+
+if __name__ == "__main__":
+    sys.argv[0] = 'xsm'
+    set_procname('xsm')
+    app = QApplication(sys.argv)
+
+    xcm = XapiConnectionManager()
+
+    mw = MainWindow()
+    mw.xcm = xcm
+    mw.show()
+
+    # FIXME: connections should be managed from mainwindow
+    for d in settings.connect_details:
+        xcm.newConnection(d[0], d[1], d[2])
+
+    for conn in xcm.connections:
+        QObject.connect(conn, SIGNAL("connectionSuccessful"), mw.onConnectionSuccessful)
+        QObject.connect(conn, SIGNAL("connectionFailed"), mw.onConnectionFailed)
+
+        QObject.connect(conn, SIGNAL("vmAdded"), mw.onVmAdded)
+        QObject.connect(conn, SIGNAL("vmModified"), mw.onVmModified)
+        QObject.connect(conn, SIGNAL("vmDeleted"), mw.onVmDeleted)
+
+    sys.exit(app.exec_())
