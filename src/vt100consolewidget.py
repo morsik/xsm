@@ -28,6 +28,8 @@ class Vt100ConsoleWidget(QWidget):
 
         self.te_stream.attach(self.te_screen)
 
+        self._doubleBuffer = None
+
     def setData(self, data):
         if not data:
             self.te_stream.reset()
@@ -142,7 +144,7 @@ class Vt100ConsoleWidget(QWidget):
 
                 p.setPen(pen)
                 p.drawText(QPoint(x * (self.fontHorizontalSize + self.fontHorizontalSpacing) + self.frameSize,
-                                  y * (self.fontVerticalSize + self.fontVerticalSpacing) + self.frameSize - 4),
+                                  y * (self.fontVerticalSize + self.fontVerticalSpacing) + self.frameSize - 3),
                            char)
 
         p.drawRect(QRect(self.te_screen.cursor.x * (self.fontHorizontalSize +
