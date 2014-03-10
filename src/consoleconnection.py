@@ -43,6 +43,11 @@ class ConsoleConnection(QThread):
 
         while True:
             data = self.sock.recv(32768)
+
+            if not data:
+                self.sock.close()
+                return
+
             self.emit(SIGNAL("dataReceived"), data)
 
             # make buffer for connection data
