@@ -88,6 +88,12 @@ class MainWindow(QMainWindow):
 
         self.tabWidget.addTab(self.consoleWidget, "Console")
 
+        # set icons. i don't use qrc here
+        self.actionStart.setIcon(QIcon("icons/control.png"))
+        self.actionSuspend.setIcon(QIcon("icons/control-pause.png"))
+        self.actionReboot.setIcon(QIcon("icons/arrow-circle-double-135.png"))
+        self.actionShutdown.setIcon(QIcon("icons/control-power.png"))
+
     def onFilterTimeout(self):
         text = self.treeFilter.text()
         self.treeViewProxyModel.setFilterRegExp(QRegExp(text,
