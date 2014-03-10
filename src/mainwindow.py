@@ -91,8 +91,66 @@ class MainWindow(QMainWindow):
         # set icons. i don't use qrc here
         self.actionStart.setIcon(QIcon("icons/control.png"))
         self.actionSuspend.setIcon(QIcon("icons/control-pause.png"))
-        self.actionReboot.setIcon(QIcon("icons/arrow-circle-double-135.png"))
-        self.actionShutdown.setIcon(QIcon("icons/control-power.png"))
+        self.actionCleanReboot.setIcon(QIcon("icons/arrow-circle-double-135.png"))
+        self.actionCleanShutdown.setIcon(QIcon("icons/control-power.png"))
+        self.actionHardReboot.setIcon(QIcon("icons/arrow-circle-double-135.png"))
+        self.actionHardShutdown.setIcon(QIcon("icons/control-power.png"))
+
+        # action connections
+        QObject.connect(self.actionStart, SIGNAL("triggered()"), self.onActionStart)
+        QObject.connect(self.actionSuspend, SIGNAL("triggered()"), self.onActionSuspend)
+        QObject.connect(self.actionCleanReboot, SIGNAL("triggered()"), self.onActionCleanReboot)
+        QObject.connect(self.actionCleanShutdown, SIGNAL("triggered()"), self.onActionCleanShutdown)
+        QObject.connect(self.actionHardReboot, SIGNAL("triggered()"), self.onActionHardReboot)
+        QObject.connect(self.actionHardShutdown, SIGNAL("triggered()"), self.onActionHardShutdown)
+
+        self.setCurrentActions()
+
+    #### ACTIONS BEGIN ####
+
+    def onActionStart(self):
+        obj = self._currentObject()
+        conn = self.xcm.getConnectionByPoolRef(obj.data(role=PoolOpaqueRefRole).toString())
+        if obj.data(role=TypeRole).toString() == 'vm':
+            if conn.data['vm'][str(obj.data(role=OpaqueRefRole).toString())]['power_state'] == 'Suspended':
+                conn.call('Async.VM.resume', str(obj.data(role=OpaqueRefRole).toString()), False, False)
+            else:
+                conn.call('Async.VM.start', str(obj.data(role=OpaqueRefRole).toString()), False, False)
+
+    def onActionSuspend(self):
+        obj = self._currentObject()
+        conn = self.xcm.getConnectionByPoolRef(obj.data(role=PoolOpaqueRefRole).toString())
+        if obj.data(role=TypeRole).toString() == 'vm':
+            conn.call('Async.VM.suspend', str(obj.data(role=OpaqueRefRole).toString()))
+
+    def onActionCleanReboot(self):
+        obj = self._currentObject()
+        conn = self.xcm.getConnectionByPoolRef(obj.data(role=PoolOpaqueRefRole).toString())
+        if obj.data(role=TypeRole).toString() == 'vm':
+            conn.call('Async.VM.clean_reboot', str(obj.data(role=OpaqueRefRole).toString()))
+
+    def onActionCleanShutdown(self):
+        obj = self._currentObject()
+        conn = self.xcm.getConnectionByPoolRef(obj.data(role=PoolOpaqueRefRole).toString())
+        if obj.data(role=TypeRole).toString() == 'vm':
+            conn.call('Async.VM.clean_shutdown', str(obj.data(role=OpaqueRefRole).toString()))
+
+    def onActionHardReboot(self):
+        obj = self._currentObject()
+        conn = self.xcm.getConnectionByPoolRef(obj.data(role=PoolOpaqueRefRole).toString())
+        if obj.data(role=TypeRole).toString() == 'vm':
+            conn.call('Async.VM.hard_reboot', str(obj.data(role=OpaqueRefRole).toString()))
+
+    def onActionHardShutdown(self):
+        obj = self._currentObject()
+        conn = self.xcm.getConnectionByPoolRef(obj.data(role=PoolOpaqueRefRole).toString())
+        if obj.data(role=TypeRole).toString() == 'vm':
+            conn.call('Async.VM.hard_shutdown', str(obj.data(role=OpaqueRefRole).toString()))
+
+    #### ACTIONS END ####
+
+    def onAsyncCallback(self, callback, pool_ref, result):
+        print("[{0}]: {1}".format(callback, result))
 
     def filterTreeView(self):
         text = self.treeFilter.text()
@@ -219,12 +277,56 @@ class MainWindow(QMainWindow):
             self._getHostModel(pool_ref,
                 self.xcm.getConnectionByPoolRef(pool_ref).data['pbd'][sr_data['PBDs'][0]]['host']).appendRow(sr)
 
+    def _currentObject(self):
+        try:
+            index = self.treeView.selectedIndexes()[0]
+        except IndexError:
+            return None
+        return self.treeViewModel.itemFromIndex(self.treeViewProxyModel.mapToSource(index))
+
+    def setCurrentActions(self):
+        obj = self._currentObject()
+
+        aops = {
+            'start': self.actionStart,
+            'resume': self.actionStart,
+            'suspend': self.actionSuspend,
+            'clean_reboot': self.actionCleanReboot,
+            'clean_shutdown': self.actionCleanShutdown,
+            'hard_reboot': self.actionHardReboot,
+            'hard_shutdown': self.actionHardShutdown,
+        }
+
+        if not obj:
+            for op, action in aops.items():
+                action.setEnabled(False)
+            return
+
+        try:
+            data = self.xcm.getConnectionByPoolRef(obj.data(role=PoolOpaqueRefRole).toString()) \
+                .data[str(obj.data(role=TypeRole).toString())][str(obj.data(role=OpaqueRefRole).toString())]
+        except AttributeError:
+            print("Not implemented setCurrentActions for {0}".format(obj.data(role=TypeRole).toString()))
+            return
+
+        if obj.data(role=TypeRole) == 'vm':
+            for op, action in aops.items():
+                if op in data['allowed_operations']:
+                    action.setEnabled(True)
+                else:
+                    action.setEnabled(False)
+        else:
+            for op, action in aops.items():
+                action.setEnabled(False)
+
     def onTreeFilterChanged(self, text):
         self.treeViewFilterTimer.stop()
         self.treeViewFilterTimer.start(150)
 
     def onTreeViewItemClick(self, index):
         m = self.treeViewModel.itemFromIndex(self.treeViewProxyModel.mapToSource(index))
+
+        self.setCurrentActions()
 
         if m.data(role=TypeRole).toString() != 'vm' and m.data(role=TypeRole).toString() != 'host':
             self.consoleWidget.setData(None)
@@ -289,13 +391,18 @@ class MainWindow(QMainWindow):
             self.connect(self.consoleWidget, SIGNAL("keyPressed"), self._currentConnection.send)
 
     def onTreeViewCustomContextMenuRequest(self, pos):
-        index = self.treeView.selectedIndexes()[0]
-        m = self.treeViewModel.itemFromIndex(self.treeViewProxyModel.mapToSource(index))
+        self.setCurrentActions()
 
+        m = self._currentObject()
         menu = QMenu()
         menu.addAction(self.actionStart)
         menu.addAction(self.actionSuspend)
-        menu.addAction(self.actionShutdown)
+        menu.addSeparator()
+        menu.addAction(self.actionCleanReboot)
+        menu.addAction(self.actionHardReboot)
+        menu.addSeparator()
+        menu.addAction(self.actionCleanShutdown)
+        menu.addAction(self.actionHardShutdown)
         menu.addSeparator()
         #menu.addAction(actionProperties)
         menu.exec_(self.treeView.mapToGlobal(pos))
@@ -428,6 +535,7 @@ class MainWindow(QMainWindow):
     def onVmAdded(self, pool_ref, vm_ref, vm_data):
         self._addVmToTree(pool_ref, vm_ref, vm_data)
         self.treeView.sortByColumn(0, Qt.AscendingOrder)
+        self.setCurrentActions()
 
     def onVmModified(self, pool_ref, vm_ref, vm_data):
         vm = self._getVmModel(pool_ref, vm_ref, vm_data)
@@ -439,8 +547,10 @@ class MainWindow(QMainWindow):
             return
         self._setVmObject(vm, vm_ref, vm_data)
         self.treeView.sortByColumn(0, Qt.AscendingOrder)
+        self.setCurrentActions()
 
     def onVmDeleted(self, pool_ref, vm_ref, vm_data):
         vm = self._getVmModel(pool_ref, vm_ref, vm_data)
         vm.parent().removeRow(vm.index().row())
         self.treeView.sortByColumn(0, Qt.AscendingOrder)
+        self.setCurrentActions()

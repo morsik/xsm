@@ -2,20 +2,11 @@ from PyQt4 import QtCore
 
 import xenapi
 import socket
-try:
-    import Queue as queue
-except ImportError:
-    import queue
 
 
 class XapiConnection(QtCore.QThread):
     def __init__(self, host, user, password):
         super(XapiConnection, self).__init__()
-
-        self.q = queue.Queue()
-        self.timeout = 1.0 / 60
-
-        self.xapi = None
         self.session = None
 
         self.host = host
@@ -55,13 +46,22 @@ class XapiConnection(QtCore.QThread):
         self.is_connected = True
 
         # populate all information right after connected
-        self.data['pool'] = self.session.xenapi.pool.get_all_records()
-        self.data['host'] = self.session.xenapi.host.get_all_records()
-        self.data['vm'] = self.session.xenapi.VM.get_all_records()
-        self.data['task'] = self.session.xenapi.task.get_all_records()
-        self.data['pbd'] = self.session.xenapi.PBD.get_all_records()
-        self.data['sr'] = self.session.xenapi.SR.get_all_records()
-        self.data['console'] = self.session.xenapi.console.get_all_records()
+        self.data = {
+            'pool': self.session.xenapi.pool.get_all_records(),
+            'host': self.session.xenapi.host.get_all_records(),
+            'host_metrics': self.session.xenapi.host_metrics.get_all_records(),
+            'vm': self.session.xenapi.VM.get_all_records(),
+            'vm_metrics': self.session.xenapi.VM_metrics.get_all_records(),
+            'vm_guest_metrics': self.session.xenapi.VM_guest_metrics.get_all_records(),
+            'task': self.session.xenapi.task.get_all_records(),
+            'pbd': self.session.xenapi.PBD.get_all_records(),
+            'sr': self.session.xenapi.SR.get_all_records(),
+            'console': self.session.xenapi.console.get_all_records(),
+            'vbd': self.session.xenapi.VBD.get_all_records(),
+            'vdi': self.session.xenapi.VDI.get_all_records(),
+            'vif': self.session.xenapi.VIF.get_all_records(),
+            'message': self.session.xenapi.message.get_all_records(),
+        }
 
         # this is strange... but i couldn't find any other way to get pool ref
         pool_i = 1
@@ -77,8 +77,27 @@ class XapiConnection(QtCore.QThread):
     def __del__(self):
         self.wait()
 
-    def onThread(self, callback, function, *args, **kwargs):
-        self.q.put((callback, function, args, kwargs))
+    def onEventAdded(self, event):
+        self.data[event['class']][event['ref']] = event['snapshot']
+
+        self.emit(QtCore.SIGNAL("{0}Added".format(event['class'])), self.pool_ref, event['ref'], event['snapshot'])
+
+    def onEventModified(self, event):
+        self.data[event['class']][event['ref']] = event['snapshot']
+
+        self.emit(QtCore.SIGNAL("{0}Modified".format(event['class'])), self.pool_ref, event['ref'], event['snapshot'])
+
+    def onEventDeleted(self, event):
+        self.data[event['class']].pop(event['ref'])
+
+        self.emit(QtCore.SIGNAL("{0}Deleted".format(event['class'])), self.pool_ref, event['ref'], event['snapshot'])
+
+    def call(self, function, *args, **kwargs):
+        # connect to xapi just for one call, and then disconnect
+        s = xenapi.Session('https://' + self.host)
+        s.login_with_password(self.user, self.password)
+        out = getattr(s.xenapi, function)(*args, **kwargs)
+        print("called {0}: {1}".format(function, out))
 
     def processEvent(self, event):
         name = "(unknown)"
@@ -93,11 +112,11 @@ class XapiConnection(QtCore.QThread):
         #print("%12s %8s  %12s  %5s  %6s  %s" % (self.data['pool'][self.pool_ref]['name_label'], event['id'], event['class'], event['operation'], prg, name))
 
         if event['operation'] == 'add':
-            self.emit(QtCore.SIGNAL("%sAdded" % event['class']), self.pool_ref, event['ref'], event['snapshot'])
+            self.onEventAdded(event)
         elif event['operation'] == 'mod':
-            self.emit(QtCore.SIGNAL("%sModified" % event['class']), self.pool_ref, event['ref'], event['snapshot'])
+            self.onEventModified(event)
         elif event['operation'] == 'del':
-            self.emit(QtCore.SIGNAL("%sDeleted" % event['class']), self.pool_ref, event['ref'], event['snapshot'])
+            self.onEventDeleted(event)
         else:
             raise Exception("Unknown XenAPI event operation: %s" % event['operation'])
 
@@ -113,15 +132,11 @@ class XapiConnection(QtCore.QThread):
             s.xenapi.event.register(["*"])
             while True:
                 try:
-                    callback, function, args, kwargs = self.q.get(timeout=self.timeout)
-                    self.emit(QtCore.SIGNAL("asyncCallback"), callback, self.pool_ref, function(*args, **kwargs))
-                except queue.Empty:
-                    try:
-                        for event in s.xenapi.event.next():
-                            self.processEvent(event)
-                    except xenapi.Failure as e:
-                        if e.details == ["EVENTS_LOST"]:
-                            print("Caught EVENTS_LOST; should reregister")
+                    for event in s.xenapi.event.next():
+                        self.processEvent(event)
+                except xenapi.Failure as e:
+                    if e.details == ["EVENTS_LOST"]:
+                        print("Caught EVENTS_LOST; should reregister")
         except socket.error as e:
             self.is_connected = False
             self.emit(QtCore.SIGNAL("connectionError"), e)
