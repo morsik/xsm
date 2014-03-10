@@ -149,9 +149,6 @@ class MainWindow(QMainWindow):
 
     #### ACTIONS END ####
 
-    def onAsyncCallback(self, callback, pool_ref, result):
-        print("[{0}]: {1}".format(callback, result))
-
     def filterTreeView(self):
         text = self.treeFilter.text()
         self.treeViewProxyModel.setFilterRegExp(QRegExp(text,
