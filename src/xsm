@@ -38,7 +38,6 @@ if __name__ == "__main__":
     for conn in xcm.connections:
         QObject.connect(conn, SIGNAL("connectionSuccessful"), mw.onConnectionSuccessful)
         QObject.connect(conn, SIGNAL("connectionFailed"), mw.onConnectionFailed)
-        QObject.connect(conn, SIGNAL("asyncCallback"), mw.onAsyncCallback)
 
         for event in ['vm']:
             QObject.connect(conn, SIGNAL("{0}Added".format(event)), mw.onVmAdded)
