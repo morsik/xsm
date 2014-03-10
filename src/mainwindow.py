@@ -94,7 +94,7 @@ class MainWindow(QMainWindow):
         self.actionReboot.setIcon(QIcon("icons/arrow-circle-double-135.png"))
         self.actionShutdown.setIcon(QIcon("icons/control-power.png"))
 
-    def onFilterTimeout(self):
+    def filterTreeView(self):
         text = self.treeFilter.text()
         self.treeViewProxyModel.setFilterRegExp(QRegExp(text,
             Qt.CaseInsensitive, QRegExp.FixedString));
@@ -108,6 +108,9 @@ class MainWindow(QMainWindow):
                 for j in range(pool_model.rowCount()):
                     # FIXME doesn't de-expand, don't know why yet
                     self.treeView.setExpanded(pool_model.child(j, 0).index(), False)
+
+    def onFilterTimeout(self):
+        self.filterTreeView()
 
     def onConsoleConnectionDataReceived(self, data):
         self.consoleWidget.setData(data)
@@ -326,6 +329,7 @@ class MainWindow(QMainWindow):
 
         self.treeView.sortByColumn(0, Qt.AscendingOrder)
         self.treeView.setExpanded(pool.index(), True)
+        self.filterTreeView()
 
     def onConnectionFailed(self, pool_ref, data):
         pass
